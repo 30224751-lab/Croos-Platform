@@ -1,0 +1,436 @@
+import 'package:flutter/material.dart';
+
+class CalculatorPage extends StatefulWidget
+{
+  const CalculatorPage({super.key});
+
+  @override
+  State<CalculatorPage> createState() => _CalculatorPageState();
+}
+
+class _CalculatorPageState extends State<CalculatorPage> 
+{
+  String _display = '0';
+
+  // Expression we build from button presses (e.g., "12.5+3*4")
+  String _expr = '';
+
+  bool get _hasError => _display == 'Error';
+
+  void _onTap(String key) 
+  {
+    setState(() 
+    {
+      if (_hasError && key != 'C') 
+      {
+        _display = '0';
+        _expr = '';
+      }
+
+      switch (key) 
+      {
+        case 'C':
+          _display = '0';
+          _expr = '';
+          return;
+
+        case '⌫':
+          if (_expr.isEmpty) 
+          {
+            _display = '0';
+            return;
+          }
+          _expr = _expr.substring(0, _expr.length - 1);
+          _display = _expr.isEmpty ? '0' : _expr;
+          return;
+
+        case '=':
+          if (_expr.isEmpty) return;
+          final result = _evaluate(_expr);
+          if (result == null || result.isNaN || result.isInfinite) 
+          {
+            _display = 'Error';
+            _expr = '';
+            return;
+          }
+          _display = _formatNumber(result);
+          _expr = _display; // allow continuing calculations from result
+          return;
+
+        case '+':
+        case '-':
+        case 'x':
+        case '÷':
+          _appendOperator(key);
+          return;
+
+        case '.':
+          _appendDecimal();
+          return;
+
+        default: // digits
+          _appendDigit(key);
+          return;
+      }
+    });
+  }
+
+  void _appendDigit(String digit)
+  {
+    if (_expr == '0') _expr = '';
+    _expr += digit;
+    _display = _expr;
+  }
+
+  void _appendDecimal()
+  {
+    if (_expr.isEmpty || _endsWithOperator(_expr))
+    {
+      _expr += '0.';
+      _display = _expr;
+      return;
+    }
+
+    final lastNumberChunk = _currentNumberChunk(_expr);
+    if (lastNumberChunk.contains('.')) return;
+
+    _expr += '.';
+    _display = _expr;
+  }
+
+//Converts the 'x' and the '÷' symbols into the proper terms for the app to understand
+  void _appendOperator(String op)
+  {
+    final normalized = op == 'x'
+        ? '*'
+        : op == '÷'
+            ? '/'
+            : op;
+
+    //Allows for Negative numbers to be used
+    if (_expr.isEmpty)
+    {
+      if (normalized == '-')
+      {
+        _expr = '-';
+        _display = _expr;
+      }
+      return;
+    }
+
+    //Changes the operator if a number already has an operator in front of it (12+ turns to !2- if '-' is pressed)
+    if (_endsWithOperator(_expr))
+    {
+      _expr = _expr.substring(0, _expr.length - 1) + normalized;
+      _display = _expr;
+      return;
+    }
+
+    _expr += normalized;
+    _display = _expr;
+  }
+
+  bool _endsWithOperator(String s)
+  {
+    if (s.isEmpty) return false;
+    final c = s[s.length - 1];
+    return c == '+' || c == '-' || c == '*' || c == '/';
+  }
+
+  String _currentNumberChunk(String s)
+  {
+    int i = s.length - 1;
+    while (i >= 0)
+    {
+      final c = s[i];
+      if (c == '+' || c == '*' || c == '/' || (c == '-' && i != 0))
+      {
+        break;
+      }
+      i--;
+    }
+    return s.substring(i + 1);
+  }
+
+  // Allows for BIDMAS (multiplication and division happen before addition and subtraction)
+  double? _evaluate(String expression)
+  {
+    try
+    {
+      final tokens = _tokenize(expression);
+      if (tokens.isEmpty) return null;
+
+      final rpn = _toRpn(tokens);
+      return _evalRpn(rpn);
+    } catch (_)
+    {
+      return null;
+    }
+  }
+
+  List<String> _tokenize(String expr)
+  {
+    final tokens = <String>[];
+    int i = 0;
+
+    while (i < expr.length)
+    {
+      final ch = expr[i];
+
+      //Ensures that spaces are skipped (this is just in case, as this shouldn't be possible)
+      if (ch.trim().isEmpty)
+      {
+        i++;
+        continue;
+      }
+
+      if (ch == '+' || ch == '-' || ch == '*' || ch == '/')
+      {
+        if (ch == '-' && (tokens.isEmpty || _isOperator(tokens.last)))
+        {
+          //Makes it so the calculator can properly read negative numbers that are decimals as well
+          final sb = StringBuffer('-');
+          i++;
+          while (i < expr.length)
+          {
+            final c = expr[i];
+            if ((c.codeUnitAt(0) >= 48 && c.codeUnitAt(0) <=57) || c == '.')
+            {
+              sb.write(c);
+              i++;
+            } 
+            else
+            {
+              break;
+            }
+          }
+          tokens.add(sb.toString());
+          continue;
+        }
+
+        tokens.add(ch);
+        i++;
+        continue;
+      }
+
+      if ((ch.codeUnitAt(0) >= 48 && ch.codeUnitAt(0) <= 57) || ch == '.')
+      {
+        final sb = StringBuffer();
+        while (i < expr.length)
+        {
+          final c = expr[i];
+          if ((c.codeUnitAt(0) >= 48 && c.codeUnitAt(0) <= 57) || c == '.')
+          {
+            sb.write(c);
+            i++;
+          } 
+          else
+          {
+            break;
+          }
+        }
+        tokens.add(sb.toString());
+        continue;
+      }
+
+      // Giving unknown character leads to an error
+      throw FormatException('Invalid character');
+    }
+
+    return tokens;
+  }
+
+  bool _isOperator(String t) => t == '+' || t == '-' || t == '*' || t == '/';
+
+  int _precedence(String op)
+  {
+    if (op == '*' || op == '/') return 2;
+    if (op == '+' || op == '-') return 1;
+    return 0;
+  }
+
+  List<String> _toRpn(List<String> tokens)
+  {
+    final output = <String>[];
+    final ops = <String>[];
+
+    for (final t in tokens)
+    {
+      if (_isOperator(t))
+      {
+        while (ops.isNotEmpty &&
+           _isOperator(ops.last) &&
+           _precedence(ops.last) >= _precedence(t))
+        {
+          output.add(ops.removeLast());
+        }
+        ops.add(t);
+      }
+      else
+      {
+        output.add(t);
+      }
+    }
+
+    while (ops.isNotEmpty)
+    {
+      output.add(ops.removeLast());
+    }
+
+    return output;
+  }
+
+  double? _evalRpn(List<String> rpn)
+  {
+    final stack = <double>[];
+
+    for (final t in rpn)
+    {
+      if (_isOperator(t))
+      {
+        if (stack.length < 2) return null;
+        final b = stack.removeLast();
+        final a = stack.removeLast();
+        switch (t)
+        {
+          case '+':
+            stack.add(a + b);
+            break;
+          case '-':
+            stack.add(a - b);
+            break;
+          case '*':
+            stack.add(a * b);
+            break;
+          case '/':
+            stack.add(a / b);
+            break;
+        }
+      }
+      else
+      {
+        final v = double.tryParse(t);
+        if (v == null) return null;
+        stack.add(v);
+      }
+    }
+
+    if (stack.length != 1) return null;
+    return stack.single;
+  }
+
+  String _formatNumber(double n)
+  //Removes trailing .0 for whole numbers
+  {
+    if (n == n.roundToDouble()) return n.toInt().toString();
+
+    //Trim the decimals after a resonable number
+    final s = n.toStringAsFixed(10);
+    return s.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  @override
+  Widget build(BuildContext context)
+  {
+    final buttons = <List<String>>
+    [
+      ['C', '⌫', '÷', 'x'],
+      ['7', '8', '9', '-'],
+      ['4', '5', '6', '+'],
+      ['1', '2', '3', '='],
+      ['0', '.', '', ''],
+    ];
+
+    return Scaffold
+    (
+      appBar: AppBar(title: const Text('Calculator')),
+      body: SafeArea
+      (
+        child: Column
+        (
+          children: //Contains the code for the UI of the calculator
+          [
+            Expanded
+            (
+              child: Container
+              (
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                alignment: Alignment.bottomRight,
+                child: FittedBox
+                (
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text
+                  (
+                    _display,
+                    style: const TextStyle(fontSize: 56, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+
+            //Code for buttons that will contain the operators and numbers
+            Expanded
+            (
+              flex: 2,
+              child: Padding
+              (
+                padding: const EdgeInsets.all(12),
+                child: Column
+                (
+                  children: buttons.map((row)
+                  {
+                    return Expanded
+                    (
+                      child: Row
+                      (
+                        children: row.map((label) 
+                        {
+                          if (label.isEmpty)
+                          {
+                            return const Expanded(child: SizedBox.shrink());
+                          }
+                          final isOp = ['C', '⌫', '÷', '×', '-', '+', '='].contains(label);
+
+                          return Expanded
+                          (
+                            child: Padding
+                            (
+                              padding: const EdgeInsets.all(6),
+                              child: ElevatedButton
+                              (
+                                onPressed: () => _onTap(label),
+                                style: ElevatedButton.styleFrom
+                                (
+                                  padding: const EdgeInsets.all(18),
+                                  shape: RoundedRectangleBorder
+                                  (
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                child: Text
+                                (
+                                  label,
+                                  style: TextStyle
+                                  (
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    );
+                  }).toList(),
+                )
+              )
+            )
+          ]
+        )
+      )
+    );
+  }
+}
