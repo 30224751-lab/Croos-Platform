@@ -1,0 +1,340 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+class MathGamePage extends StatefulWidget 
+{
+  const MathGamePage({super.key});
+
+  @override
+  State<MathGamePage> createState() => _MathGamePageState();
+}
+
+class MathQuestion 
+{
+  final String text;
+  final int answer;
+
+  const MathQuestion({required this.text, required this.answer});
+}
+
+class _MathGamePageState extends State<MathGamePage> 
+{
+  static const int secondsPerQuestion = 10;
+
+  final _rng = Random();
+  final _answerController = TextEditingController();
+  final _answerFocus = FocusNode();
+
+  Timer? _timer;
+  int _timeLeft = secondsPerQuestion;
+
+  int _score = 0;
+  bool _isPlaying = false;
+
+  MathQuestion _current = const MathQuestion(text: 'Press Start', answer: 0);
+
+  @override
+  void dispose() 
+  {
+    _timer?.cancel();
+    _answerController.dispose();
+    _answerFocus.dispose();
+    super.dispose();
+  }
+
+  void _startGame() 
+  {
+    _timer?.cancel();
+    setState(() 
+    {
+      _score = 0;
+      _isPlaying = true;
+    });
+
+    _nextQuestion();
+    _resetTimer();
+    _focusAnswer();
+  }
+
+  void _focusAnswer() 
+  {
+    WidgetsBinding.instance.addPostFrameCallback((_) 
+    {
+      if (mounted) _answerFocus.requestFocus();
+    });
+  }
+
+  void _resetTimer() 
+  {
+    _timer?.cancel();
+    setState(() => _timeLeft = secondsPerQuestion);
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (t)
+    {
+      if (!_isPlaying) return;
+
+      setState(() => _timeLeft -= 1);
+
+      if (_timeLeft <= 0) 
+      {
+        _endGame(reason: 'Time ran out!');
+      }
+    });
+  }
+
+  void _nextQuestion() 
+  {
+    _answerController.clear();
+    setState(() 
+    {
+      _current = _generateQuestion();
+    });
+  }
+
+  MathQuestion _generateQuestion() 
+  {
+    // 0: +, 1: -, 2: ×, 3: ÷
+    final op = _rng.nextInt(4);
+
+    switch (op) 
+    {
+      case 0: // addition
+        final a = _rng.nextInt(100);
+        final b = _rng.nextInt(100);
+        return MathQuestion(text: '$a + $b', answer: a + b);
+
+      case 1: // subtraction (non-negative whole numbers)
+        final a = _rng.nextInt(100);
+        final b = _rng.nextInt(100);
+        final big = max(a, b);
+        final small = min(a, b);
+        return MathQuestion(text: '$big − $small', answer: big - small);
+
+      case 2: // multiplication
+        final a = _rng.nextInt(13); // 0..12
+        final b = _rng.nextInt(13);
+        return MathQuestion(text: '$a × $b', answer: a * b);
+
+      case 3: // division (always whole number)
+      default:
+        final divisor = _rng.nextInt(12) + 1; // 1..12
+        final quotient = _rng.nextInt(13); // 0..12
+        final dividend = divisor * quotient;
+        return MathQuestion(text: '$dividend ÷ $divisor', answer: quotient);
+    }
+  }
+
+  void _submit() 
+  {
+    if (!_isPlaying) return;
+
+    final raw = _answerController.text.trim();
+    final guess = int.tryParse(raw);
+
+    if (guess == null) 
+    {
+      _endGame(reason: 'Invalid answer.');
+      return;
+    }
+
+    if (guess == _current.answer) 
+    {
+      setState(() => _score += 1);
+      _nextQuestion();
+      _resetTimer(); // reset to 10 seconds after correct answer
+      _focusAnswer();
+    } else 
+    {
+      _endGame(reason: 'Wrong answer.');
+    }
+  }
+
+  Future<void> _endGame({required String reason}) async 
+  {
+    if (!_isPlaying) return;
+
+    _timer?.cancel();
+    setState(() => _isPlaying = false);
+
+    if (!mounted) return;
+
+    await showDialog<void>
+    (
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Game Over'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: 
+          [
+            Text(reason),
+            const SizedBox(height: 12),
+            Text('Final score: $_score'),
+            const SizedBox(height: 12),
+            Text('Last question: ${_current.text}'),
+            Text('Correct answer: ${_current.answer}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () 
+            {
+              Navigator.of(ctx).pop();
+              setState(() 
+              {
+                _current = const MathQuestion(text: 'Press Start', answer: 0);
+                _timeLeft = secondsPerQuestion;
+                _answerController.clear();
+              });
+            },
+            child: const Text('Back'),
+          ),
+          FilledButton
+          (
+            onPressed: () 
+            {
+              Navigator.of(ctx).pop();
+              _startGame();
+            },
+            child: const Text('Play again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) 
+  {
+    final progress = _isPlaying
+        ? (_timeLeft / secondsPerQuestion).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Scaffold
+    (
+      appBar: AppBar
+      (
+        title: const Text('Math Game'),
+        leading: IconButton
+        (
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+          tooltip: 'Back',
+        ),
+      ),
+      body: Center
+      (
+        child: ConstrainedBox
+        (
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding
+          (
+            padding: const EdgeInsets.all(16),
+            child: Card
+            (
+              child: Padding
+              (
+                padding: const EdgeInsets.all(16),
+                child: Column
+                (
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row
+                    (
+                      children: [
+                        Expanded(
+                          child: Text
+                          (
+                            'Score: $_score',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        Text
+                        (
+                          _isPlaying ? 'Time: $_timeLeft' : 'Time: —',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect
+                    (
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(value: progress),
+                    ),
+                    const SizedBox(height: 18),
+                    Text
+                    (
+                      _current.text,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 18),
+                    TextField
+                    (
+                      controller: _answerController,
+                      focusNode: _answerFocus,
+                      enabled: _isPlaying,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        signed: false,
+                        decimal: false,
+                      ),
+                      inputFormatters: 
+                      [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submit(),
+                      decoration: const InputDecoration(
+                        labelText: 'Your answer (whole number)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row
+                    (
+                      children: 
+                      [
+                        Expanded
+                        (
+                          child: FilledButton
+                          (
+                            onPressed: _isPlaying ? _submit : _startGame,
+                            child: Text(_isPlaying ? 'Submit' : 'Start'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton
+                        (
+                          onPressed: _isPlaying
+                              ? () => _endGame(reason: 'You ended the game.')
+                              : null,
+                          child: const Text('End'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text
+                    (
+                      _isPlaying
+                          ? 'Answer before the timer hits 0.'
+                          : 'Press Start to begin. Each question has 10 seconds.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
