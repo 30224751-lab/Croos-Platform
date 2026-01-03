@@ -1,0 +1,104 @@
+import 'package:flutter/material.dart';
+
+import 'Calculator.dart';
+import 'MathGame.dart';
+
+void main()
+{
+  runApp(const MathApp());
+}
+
+class MathApp extends StatelessWidget
+{
+  const MathApp({super.key});
+
+  //Declares all the routes that are going to be used in the main menu
+  static const String routeMenu = '/main-menu';
+  static const String routeCalculator = '/calculator';
+  static const String routeMathGame = '/math-game';
+
+  @override
+  Widget build(BuildContext context)
+  {
+    return MaterialApp
+    (
+      debugShowCheckedModeBanner: false,
+      title: 'Main Menu',
+      theme: ThemeData
+      (
+        useMaterial3: true,
+        colorSchemeSeed: Colors.cyan, //calls forth the color the app will use
+      ), //Theme
+      initialRoute: routeMenu,
+      routes: //Makes it so that when the routes are called, they correspond to a specific Page
+      {
+        routeMenu: (_) => const MainMenuPage(),
+        routeCalculator: (_) => const CalculatorPage(),
+        routeMathGame: (_) => const MathGamePage(),
+      },
+    ); //Material
+  }
+}
+
+//Main Menu page code
+class MainMenuPage extends StatelessWidget
+{
+  const MainMenuPage({super.key});
+
+  @override
+  Widget build(BuildContext context)
+  {
+    return Scaffold
+    (
+      appBar: AppBar(title: const Text('Main Menu')), //Sets the title of the main menu
+      body: Center
+      (
+        child: ConstrainedBox
+        (
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding
+          (
+            padding: const EdgeInsets.all(16),
+            child: Column
+            (
+              mainAxisSize: MainAxisSize.min,
+              children: 
+              [
+                //This is where we make the first button to be used as the Calculator page director
+                const SizedBox(height: 18),
+                SizedBox
+                (
+                  width: double.infinity,
+                  child: FilledButton
+                  (
+                    onPressed: () => Navigator.pushNamed
+                    (
+                      context,
+                      MathApp.routeCalculator,
+                    ),
+                    child: const Text('Calculator'),
+                  ), //CalculatorButton
+                ), //CalculatorSizedBox
+                //This is the button to be used as the Math Game page director
+                const SizedBox(height: 18),
+                SizedBox
+                (
+                  width: double.infinity,
+                  child: FilledButton
+                  (
+                    onPressed: () => Navigator.pushNamed
+                    (
+                      context,
+                      MathApp.routeMathGame,
+                    ),
+                    child: const Text ("Math Game"),
+                  ), //MathGameButton
+                ), //MathGameSizedBox
+              ],
+            ), //Column
+          ), //Padding
+        ), //ConstrainedBox
+      ), //Center
+    ); //Scaffold
+  }
+}
